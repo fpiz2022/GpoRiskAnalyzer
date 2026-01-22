@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><RegistrySettings><Registry name="BadKey" action="U"><Properties hive="HKEY_LOCAL_MACHINE" key="Software\Bad" name="TattooMe" type="REG_SZ" value="PersistForever"/></Registry></RegistrySettings>

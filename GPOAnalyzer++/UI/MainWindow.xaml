@@ -1,0 +1,89 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="GPO Analyzer ++" Height="600" Width="900" Background="#1e1e1e">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#3b82f6"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="15,5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#2563eb"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#2d2d2d"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#444"/>
+            <Setter Property="Padding" Value="5"/>
+        </Style>
+                <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="#1e1e1e"/>
+            <Setter Property="Foreground" Value="#e0e0e0"/>
+            <Setter Property="RowBackground" Value="#1e1e1e"/>
+            <Setter Property="AlternatingRowBackground" Value="#2d2d2d"/>
+            <Setter Property="HeadersVisibility" Value="Column"/>
+            <Setter Property="GridLinesVisibility" Value="None"/>
+        </Style>
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#333"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+            <Setter Property="BorderBrush" Value="#444"/>
+            <Setter Property="Height" Value="30"/>
+        </Style>
+    </Window.Resources>
+    
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Header -->
+        <TextBlock Text="GPO Analyzer ++" Foreground="White" FontSize="20" FontWeight="Light" Margin="0,0,0,10"/>
+
+        <!-- Toolbar -->
+        <Grid Grid.Row="1" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <TextBox Name="txtPath" Grid.Column="0" Margin="0,0,10,0" VerticalContentAlignment="Center" ToolTip="Paste GPO path here"/>
+            <Button Name="btnBrowse" Grid.Column="1" Content="..." Width="40" Margin="0,0,10,0"/>
+            
+            <Button Name="btnLoad" Grid.Column="2" Content="Load Path" Margin="0,0,10,0"/>
+            <Button Name="btnAnalyze" Grid.Column="3" Content="Analyze" Margin="0,0,10,0"/>
+            <Button Name="btnExport" Grid.Column="4" Content="Export"/>
+        </Grid>
+        
+        <!-- Results -->
+        <DataGrid Name="gridResults" Grid.Row="2" AutoGenerateColumns="True" CanUserAddRows="False" IsReadOnly="True" BorderThickness="0"/>
+        
+        <!-- Status -->
+        <StatusBar Grid.Row="3" Background="#1e1e1e" Foreground="#888">
+            <StatusBarItem>
+                <TextBlock Name="txtStatus" Text="Ready"/>
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</Window>
+
