@@ -5,7 +5,7 @@ $scriptRoot = $PSScriptRoot
 
 # Import Models
 # Classes should be dot-sourced or creating a module manifest (.psd1) is better, but dot-sourcing for simplicity here
-. "$scriptRoot\Models\GPOSetting.psm1"
+Import-Module "$scriptRoot\Models\GPOSetting.psm1" -Force
 
 # Import Core Modules
 Import-Module "$scriptRoot\Core\GPOBackupParser.psm1" -Force

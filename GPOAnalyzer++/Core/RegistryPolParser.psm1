@@ -1,4 +1,4 @@
-function Parse-RegistryPol {
+function Import-RegistryPol {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
@@ -130,4 +130,4 @@ function Parse-RegistryPol {
     return $entries
 }
 
-Export-ModuleMember -Function Parse-RegistryPol
+Export-ModuleMember -Function Import-RegistryPol
