@@ -13,9 +13,9 @@
         <Style TargetType="Button">
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="16,2"/>
+            <Setter Property="Padding" Value="21,1"/>
             <Setter Property="FontWeight" Value="Medium"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontSize" Value="14"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -70,8 +70,8 @@
             <Setter Property="Foreground" Value="#f1f5f9"/>
             <Setter Property="BorderBrush" Value="#64748b"/>
             <Setter Property="BorderThickness" Value="2"/>
-            <Setter Property="Padding" Value="10,6"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="13,5"/>
+            <Setter Property="FontSize" Value="14"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
@@ -99,8 +99,8 @@
             <Setter Property="Foreground" Value="#f1f5f9"/>
             <Setter Property="BorderBrush" Value="#64748b"/>
             <Setter Property="BorderThickness" Value="2"/>
-            <Setter Property="Padding" Value="10,4"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="13,3"/>
+            <Setter Property="FontSize" Value="14"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBox">
@@ -194,10 +194,9 @@
         <Style TargetType="DataGridColumnHeader">
             <Setter Property="Background" Value="#334155"/>
             <Setter Property="Foreground" Value="#f1f5f9"/>
-            <Setter Property="Padding" Value="12,8"/>
-            <Setter Property="BorderThickness" Value="0,0,1,2"/>
-            <Setter Property="BorderBrush" Value="#475569"/>
-            <Setter Property="Height" Value="36"/>
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="12,6"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
         </Style>
@@ -218,7 +217,7 @@
         </Style>
     </Window.Resources>
     
-    <Grid Margin="10">
+    <Grid Margin="10,8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -229,7 +228,7 @@
         </Grid.RowDefinitions>
         
         <!-- Header -->
-        <Border Grid.Row="0" Padding="0,10,0,15" BorderThickness="0,0,0,2" Margin="0,0,0,10">
+        <Border Grid.Row="0" Padding="0,8,0,12" BorderThickness="0,0,0,2" Margin="0,0,0,8">
             <Border.BorderBrush>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                     <GradientStop Color="#3b82f6" Offset="0"/>
@@ -244,7 +243,7 @@
         </Border>
 
         <!-- Toolbar -->
-        <Grid Grid.Row="1" Margin="0,0,0,15">
+        <Grid Grid.Row="1" Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -253,16 +252,16 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             
-            <TextBox Name="txtPath" Grid.Column="0" Margin="0,0,10,0" VerticalContentAlignment="Center" ToolTip="Paste GPO backup path here"/>
-            <Button Name="btnBrowse" Grid.Column="1" Content="Browse" Width="98" Margin="0,0,10,0" Style="{StaticResource PrimaryButton}"/>
+            <TextBox Name="txtPath" Grid.Column="0" Margin="0,0,10,0" VerticalContentAlignment="Center" ToolTip="Paste GPO backup path here" MinHeight="32"/>
+            <Button Name="btnBrowse" Grid.Column="1" Content="Browse" Width="140" Margin="0,0,10,0" Style="{StaticResource PrimaryButton}" Height="32"/>
             
-            <Button Name="btnLoad" Grid.Column="2" Content="Load" Width="85" Margin="0,0,10,0" Style="{StaticResource PrimaryButton}"/>
-            <Button Name="btnAnalyze" Grid.Column="3" Content="Analyze" Width="98" Margin="0,0,10,0" Style="{StaticResource PrimaryButton}"/>
-            <Button Name="btnExport" Grid.Column="4" Content="Export" Width="91" Style="{StaticResource SuccessButton}"/>
+            <Button Name="btnLoad" Grid.Column="2" Content="Load" Width="111" Margin="0,0,10,0" Style="{StaticResource PrimaryButton}"/>
+            <Button Name="btnAnalyze" Grid.Column="3" Content="Analyze" Width="128" Margin="0,0,10,0" Style="{StaticResource PrimaryButton}"/>
+            <Button Name="btnExport" Grid.Column="4" Content="Export" Width="119" Style="{StaticResource SuccessButton}"/>
         </Grid>
         
         <!-- Filter Bar -->
-        <Border Grid.Row="2" Margin="0,0,0,15" Padding="12,10" CornerRadius="6" BorderThickness="2">
+        <Border Grid.Row="2" Margin="0,0,0,12" Padding="12,8" CornerRadius="6" BorderThickness="2">
             <Border.Background>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                     <GradientStop Color="#1e293b" Offset="0"/>
@@ -286,18 +285,8 @@
                 <TextBlock Text="Filter by:" Grid.Column="0" Foreground="#e2e8f0" FontWeight="SemiBold" 
                            VerticalAlignment="Center" Margin="0,0,12,0" FontSize="13"/>
                 
-                <ComboBox Name="cmbFilterColumn" Grid.Column="1" Width="160" Margin="0,0,12,0" 
+                <ComboBox Name="cmbFilterColumn" Grid.Column="1" Width="140" Margin="0,0,12,0" 
                           ToolTip="Select column to filter by">
-                     <ComboBoxItem IsSelected="True">Status</ComboBoxItem>
-                     <ComboBoxItem>SettingType</ComboBoxItem>
-                     <ComboBoxItem>Parameter</ComboBoxItem>
-                     <ComboBoxItem>Key</ComboBoxItem>
-                     <ComboBoxItem>RefValue</ComboBoxItem>
-                     <ComboBoxItem>DiffValue</ComboBoxItem>
-                     <ComboBoxItem>Context</ComboBoxItem>
-                     <ComboBoxItem>Path</ComboBoxItem>
-                     <ComboBoxItem>TattooingRisk</ComboBoxItem>
-                     <ComboBoxItem>TattooingReason</ComboBoxItem>
                 </ComboBox>
                 
                 <TextBox Name="txtFilter" Grid.Column="2" VerticalContentAlignment="Center" 
@@ -310,7 +299,7 @@
                   CanUserResizeColumns="True" ColumnWidth="150"/>
         
         <!-- Cell Detail Viewer -->
-        <Grid Grid.Row="4" Margin="0,5,0,5">
+        <Grid Grid.Row="4" Margin="0,4,0,4">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>

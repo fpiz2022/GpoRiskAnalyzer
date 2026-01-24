@@ -83,6 +83,7 @@ function Show-UI {
                 $count = $script:loadedSettings.Count
                 $txtStatus.Text = "Loaded $count settings."
                 $gridResults.ItemsSource = $script:loadedSettings
+                Update-FilterColumns -Data $script:loadedSettings
                 Log-Message "Loaded $count items."
             }
             catch {
@@ -140,6 +141,7 @@ function Show-UI {
 
                 $script:analysisResults = $finalList
                 $gridResults.ItemsSource = $finalList
+                Update-FilterColumns -Data $finalList
                 $txtStatus.Text = "Comparison Complete ($gpo1 vs $gpo2)."
             }
             else {
@@ -168,6 +170,7 @@ function Show-UI {
                 }
                 $script:analysisResults = $res
                 $gridResults.ItemsSource = $res
+                Update-FilterColumns -Data $res
                 $txtStatus.Text = "Audit Complete."
             }
         })
@@ -198,6 +201,34 @@ function Show-UI {
     $txtFilter = $window.FindName("txtFilter")
     $cmbFilterColumn = $window.FindName("cmbFilterColumn")
 
+    # Helper to update filter columns based on current data
+    function Update-FilterColumns {
+        param($Data)
+        if ($null -eq $Data -or $Data.Count -eq 0) { return }
+        
+        $currentSelection = $cmbFilterColumn.Text
+        $cmbFilterColumn.Items.Clear()
+        
+        # Get properties from the first item, excluding internal properties
+        $ignore = @("RefObject", "DiffObject", "RefSource", "DiffSource", "DiffGPOName", "RefGPOName")
+        $firstItem = $Data[0]
+        $props = $firstItem.PSObject.Properties | 
+        Where-Object { $_.Name -notin $ignore } | 
+        Select-Object -ExpandProperty Name
+        
+        foreach ($p in $props) {
+            $item = New-Object System.Windows.Controls.ComboBoxItem
+            $item.Content = $p
+            if ($p -eq $currentSelection) { $item.IsSelected = $true }
+            $cmbFilterColumn.Items.Add($item)
+        }
+        
+        # Default selection if nothing selected
+        if ([string]::IsNullOrWhiteSpace($cmbFilterColumn.Text) -and $cmbFilterColumn.Items.Count -gt 0) {
+            $cmbFilterColumn.SelectedIndex = 0
+        }
+    }
+
     # Helper to apply filter
     function Apply-Filter {
         $view = [System.Windows.Data.CollectionViewSource]::GetDefaultView($gridResults.ItemsSource)
@@ -217,7 +248,7 @@ function Show-UI {
                 
                 # Dynamic property access
                 $val = $item.$colName
-                if ($val -eq $null) { return $false }
+                if ($null -eq $val) { return $false }
                 return [string]$val -match [regex]::Escape($text)
             }
         }

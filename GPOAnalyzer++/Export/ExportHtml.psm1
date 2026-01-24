@@ -7,136 +7,157 @@ function Export-ToHtml {
         [string]$Path
     )
 
-    # Convert Data to JSON for client-side rendering
-    # Depth 2 is usually enough for flat objects
-    $jsonData = ConvertTo-Json -InputObject @($Data) -Depth 2 -Compress
+    # Convert Data to JSON and then to Base64
+    $jsonData = ConvertTo-Json -InputObject @($Data) -Depth 10 -Compress
+    $jsonBase64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($jsonData))
 
-    $htmlContent = @"
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+    $htmlTemplate = @'
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPO Analysis Report</title>
+    <title>GPO Analyzer ++ | Analysis Report</title>
+    <link href="https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-body: #121212;
-            --bg-card: #1e1e1e;
-            --bg-header: #2d2d2d;
-            --text-main: #e0e0e0;
-            --text-muted: #a0a0a0;
-            --accent: #3b82f6;
-            --border: #333;
-            
+            --primary: #3b82f6;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border: #334155;
             --risk-high: #ef4444;
-            --risk-med: #f59e0b;
+            --risk-medium: #f59e0b;
             --risk-low: #10b981;
-            --risk-none: #3b82f6; # Blue for info
         }
 
         body {
-            font-family: 'Segoe UI', Inter, Roboto, sans-serif;
-            background-color: var(--bg-body);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg-dark);
             color: var(--text-main);
             margin: 0;
             padding: 20px;
         }
 
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
+        .container { width: 100%; max-width: 1600px; margin: 0 auto; }
 
         header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 20px;
-        }
-
-        h1 { margin: 0; font-weight: 300; letter-spacing: 1px; }
-        .meta { font-size: 0.9em; color: var(--text-muted); }
-
-        .controls {
-            display: flex;
-            gap: 10px;
+            padding: 10px 0 20px 0;
+            border-bottom: 2px solid var(--border);
             margin-bottom: 20px;
         }
 
-        input[type="text"] {
+        h1 { margin: 0; font-size: 24px; color: var(--primary); font-weight: 700; }
+        .meta { color: var(--text-muted); font-size: 13px; }
+
+        .search-container {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 14px 20px;
             background: var(--bg-card);
             border: 1px solid var(--border);
+            border-radius: 10px;
             color: white;
-            padding: 10px 15px;
-            border-radius: 4px;
-            flex-grow: 1;
-            font-size: 1rem;
-        }
-
-        input[type="text"]:focus {
+            font-size: 16px;
             outline: none;
-            border-color: var(--accent);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        }
+        .search-box:focus { border-color: var(--primary); }
+
+        .count-badge {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--primary);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
         }
 
         .card {
             background: var(--bg-card);
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border-radius: 12px;
+            border: 1px solid var(--border);
             overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+
+        .table-container {
+            overflow-x: auto;
+            max-height: 75vh;
+            overflow-y: auto;
         }
 
         table {
             width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9rem;
-        }
-
-        th, td {
-            padding: 12px 15px;
-            text-align: left;
-            border-bottom: 1px solid var(--border);
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 13px;
         }
 
         th {
-            background-color: var(--bg-header);
+            background: #2d3748;
+            padding: 15px 20px;
+            text-align: left;
             font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            border-bottom: 2px solid var(--border);
             cursor: pointer;
-            user-select: none;
             white-space: nowrap;
         }
-        
-        th:hover { background-color: #3d3d3d; }
+        th:hover { background: #4a5568; }
 
-        tr:hover { background-color: #2a2a2a; }
+        td {
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+            max-width: 500px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        tr:hover td { background: rgba(255, 255, 255, 0.05); }
 
-        /* Severity Badges */
         .badge {
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 0.8em;
-            font-weight: bold;
-            color: #fff;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 800;
             text-transform: uppercase;
         }
-        .risk-High { background-color: var(--risk-high); }
-        .risk-Medium { background-color: var(--risk-med); color: #000; }
-        .risk-Low { background-color: var(--risk-low); color: #000; }
-        .risk-None { background-color: var(--bg-header); color: var(--text-muted); border: 1px solid var(--border); }
-        .risk-Info { background-color: var(--accent); }
-
-        .status-DIFFERENT { color: var(--risk-med); }
-        .status-ONLY_IN_REF { color: var(--risk-high); }
-        .status-ONLY_IN_DIFF { color: var(--risk-low); }
+        .risk-High { background: var(--risk-high); color: white; }
+        .risk-Medium { background: var(--risk-medium); color: black; }
+        .risk-Low { background: var(--risk-low); color: white; }
+        .risk-None { background: #475569; color: white; }
 
         code {
-            background: #111;
-            padding: 2px 4px;
-            border-radius: 3px;
-            font-family: Consolas, monospace;
-            word-break: break-all;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            color: #93c5fd;
+            font-size: 12px;
         }
+
+        /* Styling matching GPO Analyzer ++ UI */
+        .status-IDENTICAL { color: var(--text-muted); opacity: 0.7; }
+        .status-DIFFERENT { color: var(--risk-medium); font-weight: bold; }
+        .status-ONLY_IN_REF, .status-ONLY_IN_DIFF { font-weight: bold; }
+
     </style>
 </head>
 <body>
@@ -144,158 +165,103 @@ function Export-ToHtml {
 <div class="container">
     <header>
         <div>
-            <h1>GPO Analyzer ++ Report</h1>
-            <div class="meta">Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm")</div>
-        </div>
-        <div>
-            <span class="badge risk-Info" id="total-count">0 Items</span>
+            <h1>GPO Analyzer ++ | Final Report</h1>
+            <div class="meta">Analysis Date: TIMESTAMP_PLACEHOLDER</div>
         </div>
     </header>
 
-    <div class="controls">
-        <input type="text" id="searchInput" placeholder="Search settings, paths, values...">
+    <div class="search-container">
+        <input type="text" id="filterInput" class="search-box" placeholder="Search for anything (Key, Status, Value, Parameter)...">
+        <div id="resultCount" class="count-badge">0 Results</div>
     </div>
 
     <div class="card">
-        <div style="overflow-x:auto;">
-            <table id="dataTable">
-                <thead>
-                    <tr id="tableHeader"></tr>
-                </thead>
-                <tbody id="tableBody"></tbody>
+        <div class="table-container">
+            <table>
+                <thead><tr id="headerRow"></tr></thead>
+                <tbody id="dataBody"></tbody>
             </table>
         </div>
     </div>
 </div>
 
 <script>
-    const data = $jsonData;
+    try {
+        const base64Data = "BASE64_DATA_PLACEHOLDER";
+        const jsonString = decodeURIComponent(escape(atob(base64Data)));
+        const data = JSON.parse(jsonString);
 
-    // Determine columns dynamically from first object
-    // Assuming uniform objects
-    if (data.length === 0) {
-        document.getElementById('tableBody').innerHTML = '<tr><td colspan="5">No data available</td></tr>';
-    }
-
-    // Define priority columns to show first
-    const priorityCols = ['Status', 'TattooingRisk', 'Category', 'Path', 'ValueName', 'RefValue', 'DiffValue', 'ValueData'];
-    
-    // Get all unique keys
-    let allKeys = new Set();
-    data.forEach(obj => Object.keys(obj).forEach(k => allKeys.add(k)));
-    
-    // Filter out internal or complex object keys if necessary (like 'RefObject')
-    const ignoreKeys = ['RefObject', 'DiffObject', 'SourceFile', 'RefSource', 'DiffSource'];
-    
-    let columns = [];
-    
-    // Add priority cols if they exist
-    priorityCols.forEach(c => {
-        if (allKeys.has(c)) {
-            columns.push(c);
-            allKeys.delete(c);
-        }
-    });
-    
-    // Add remaining
-    allKeys.forEach(c => {
-        if (!ignoreKeys.includes(c)) columns.push(c);
-    });
-
-    const thead = document.getElementById('tableHeader');
-    columns.forEach(col => {
-        let th = document.createElement('th');
-        th.innerText = col;
-        th.onclick = () => sortTable(col);
-        thead.appendChild(th);
-    });
-
-    const tbody = document.getElementById('tableBody');
-    const searchInput = document.getElementById('searchInput');
-    const totalCount = document.getElementById('total-count');
-
-    function renderTable(displayData) {
-        tbody.innerHTML = '';
-        totalCount.innerText = displayData.length + " Items";
-
-        // Limit rendering for performance if massive? 
-        // For now, render all (assuming < 2000 items usually)
-        
-        displayData.forEach(row => {
-            let tr = document.createElement('tr');
-            
-            columns.forEach(col => {
-                let td = document.createElement('td');
-                let val = row[col] === null || row[col] === undefined ? '' : row[col];
-                
-                // Formatting
-                if (col === 'TattooingRisk' || col === 'Severity') {
-                    td.innerHTML = `<span class="badge risk-${val}">${val}</span>`;
-                }
-                else if (col === 'Status') {
-                    td.innerHTML = `<span class="status-${val}">${val}</span>`;
-                }
-                else if (col === 'Path' || col === 'ValueName' || col.includes('Value')) {
-                    td.innerHTML = `<code>${val}</code>`;
-                }
-                else {
-                    td.innerText = val;
-                }
-                tr.appendChild(td);
-            });
-            tbody.appendChild(tr);
-        });
-    }
-
-    // Initial Render
-    renderTable(data);
-
-    // Search Logic
-    searchInput.addEventListener('input', (e) => {
-        const term = e.target.value.toLowerCase();
-        const filtered = data.filter(row => {
-            return columns.some(col => {
-                const val = String(row[col] || '').toLowerCase();
-                return val.includes(term);
-            });
-        });
-        renderTable(filtered);
-    });
-
-    // Sorting Logic
-    let currentSort = { col: null, dir: 1 };
-    
-    function sortTable(col) {
-        // Toggle direction
-        if (currentSort.col === col) {
-            currentSort.dir *= -1;
+        if (!data || data.length === 0) {
+            document.getElementById('dataBody').innerHTML = "<tr><td style='padding:40px;text-align:center'>No results found.</td></tr>";
         } else {
-            currentSort.col = col;
-            currentSort.dir = 1;
-        }
-        
-        data.sort((a, b) => {
-            let valA = a[col] || '';
-            let valB = b[col] || '';
+            const allKeys = Object.keys(data[0]);
+            const ignoreKeys = ['RefObject', 'DiffObject', 'RefSource', 'DiffSource', 'DiffGPOName', 'RefGPOName', 'SourceFile'];
+            const columns = allKeys.filter(k => !ignoreKeys.includes(k));
             
-            // Numeric check?
-            
-            if (valA < valB) return -1 * currentSort.dir;
-            if (valA > valB) return 1 * currentSort.dir;
-            return 0;
-        });
-        
-        // Re-render based on current search
-        searchInput.dispatchEvent(new Event('input')); 
-    }
+            const headerRow = document.getElementById('headerRow');
+            columns.forEach(col => {
+                const th = document.createElement('th');
+                th.innerText = col;
+                th.onclick = () => sortTable(col);
+                headerRow.appendChild(th);
+            });
 
+            function renderTable(displayData) {
+                const tbody = document.getElementById('dataBody');
+                tbody.innerHTML = "";
+                document.getElementById('resultCount').innerText = `${displayData.length} of ${data.length} results shown`;
+
+                displayData.forEach(row => {
+                    const tr = document.createElement('tr');
+                    columns.forEach(col => {
+                        const td = document.createElement('td');
+                        const val = (row[col] === null || row[col] === undefined) ? "" : row[col];
+                        
+                        if (col === 'TattooingRisk') {
+                            td.innerHTML = `<span class="badge risk-${val}">${val}</span>`;
+                        } else if (col === 'Status') {
+                            td.innerHTML = `<span class="status-${val}">${val}</span>`;
+                        } else if (['Key', 'Path', 'RefValue', 'DiffValue', 'Parameter'].includes(col)) {
+                            td.innerHTML = `<code>${val}</code>`;
+                            td.title = val;
+                        } else {
+                            td.innerText = val;
+                        }
+                        tr.appendChild(td);
+                    });
+                    tbody.appendChild(tr);
+                });
+            }
+
+            renderTable(data);
+
+            document.getElementById('filterInput').addEventListener('input', function() {
+                const term = this.value.toLowerCase();
+                const filtered = data.filter(row => 
+                    columns.some(col => String(row[col] || "").toLowerCase().includes(term))
+                );
+                renderTable(filtered);
+            });
+
+            let sortDir = 1;
+            function sortTable(col) {
+                sortDir *= -1;
+                data.sort((a,b) => String(a[col]).localeCompare(String(b[col]), undefined, {numeric: true}) * sortDir);
+                renderTable(data);
+            }
+        }
+    } catch (e) {
+        document.body.innerHTML = "<div style='color:red;padding:40px'>Error: " + e.message + "</div>";
+    }
 </script>
 </body>
 </html>
-"@
+'@
 
-    $htmlContent | Set-Content -Path $Path -Encoding UTF8
+    $finalHtml = $htmlTemplate.Replace("BASE64_DATA_PLACEHOLDER", $jsonBase64)
+    $finalHtml = $finalHtml.Replace("TIMESTAMP_PLACEHOLDER", $timestamp)
+
+    $finalHtml | Set-Content -Path $Path -Encoding UTF8
 }
 
 Export-ModuleMember -Function Export-ToHtml
-
