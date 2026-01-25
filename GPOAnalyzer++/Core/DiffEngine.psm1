@@ -53,18 +53,21 @@ function Compare-GPO {
             $status = "ONLY_IN_REF"
             
             $res = [PSCustomObject]@{
-                Key = $key
-                Parameter = $refItem.ValueName
-                Path = $refItem.RegistryPath
-                RefValue = $refItem.ValueData
-                DiffValue = $null
-                Status = $status
-                RefSource = $refItem.SourceFile
-                DiffSource = $null
-                Context = $refItem.Context
+                Status      = $status
+                SettingType = $refItem.SettingType
+                Parameter   = $refItem.ValueName
+                Path        = $refItem.RegistryPath
+                RefValue    = $refItem.ValueData
+                RefGPOName  = $refItem.GPOName
+                DiffGPOName = $null
+                RefSource   = $refItem.SourceFile
+                DiffSource  = $null
+                DiffValue   = $null
+                Key         = $key
+                Context     = $refItem.Context
                 # Keep original object for tattooing analysis
-                RefObject = $refItem
-                DiffObject = $null
+                RefObject   = $refItem
+                DiffObject  = $null
             }
             $results += $res
         }
@@ -75,22 +78,26 @@ function Compare-GPO {
 
             if ($v1 -eq $v2) {
                 $status = "IDENTICAL"
-            } else {
+            }
+            else {
                 $status = "DIFFERENT"
             }
 
             $res = [PSCustomObject]@{
-                Key = $key
-                Parameter = $refItem.ValueName
-                Path = $refItem.RegistryPath
-                RefValue = $refItem.ValueData
-                DiffValue = $diffItem.ValueData
-                Status = $status
-                RefSource = $refItem.SourceFile
-                DiffSource = $diffItem.SourceFile
-                Context = $refItem.Context
-                RefObject = $refItem
-                DiffObject = $diffItem
+                Status      = $status
+                SettingType = $refItem.SettingType
+                Parameter   = $refItem.ValueName
+                Path        = $refItem.RegistryPath
+                RefValue    = $refItem.ValueData
+                RefGPOName  = $refItem.GPOName
+                DiffGPOName = $diffItem.GPOName
+                RefSource   = $refItem.SourceFile
+                DiffSource  = $diffItem.SourceFile
+                DiffValue   = $diffItem.ValueData
+                Key         = $key
+                Context     = $refItem.Context
+                RefObject   = $refItem
+                DiffObject  = $diffItem
             }
             $results += $res
         }
@@ -99,21 +106,24 @@ function Compare-GPO {
     # 2. Check Difference items not in Reference
     foreach ($key in $diffMap.Keys) {
         if (-not $refMap.ContainsKey($key)) {
-             $diffItem = $diffMap[$key]
-             $status = "ONLY_IN_DIFF"
+            $diffItem = $diffMap[$key]
+            $status = "ONLY_IN_DIFF"
 
-             $res = [PSCustomObject]@{
-                Key = $key
-                Parameter = $diffItem.ValueName
-                Path = $diffItem.RegistryPath
-                RefValue = $null
-                DiffValue = $diffItem.ValueData
-                Status = $status
-                RefSource = $null
-                DiffSource = $diffItem.SourceFile
-                Context = $diffItem.Context
-                RefObject = $null
-                DiffObject = $diffItem
+            $res = [PSCustomObject]@{
+                Status      = $status
+                SettingType = $diffItem.SettingType
+                Parameter   = $diffItem.ValueName
+                Path        = $diffItem.RegistryPath
+                RefValue    = $null
+                RefGPOName  = $null
+                DiffGPOName = $diffItem.GPOName
+                RefSource   = $null
+                DiffSource  = $diffItem.SourceFile
+                DiffValue   = $diffItem.ValueData
+                Key         = $key
+                Context     = $diffItem.Context
+                RefObject   = $null
+                DiffObject  = $diffItem
             }
             $results += $res
         }

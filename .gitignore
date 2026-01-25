@@ -1,0 +1,8 @@
+# Exclude Tests folder
+GPOAnalyzer++/Tests/
+
+# Exclude test reports
+*.html
+
+# Exclude log files
+*.log

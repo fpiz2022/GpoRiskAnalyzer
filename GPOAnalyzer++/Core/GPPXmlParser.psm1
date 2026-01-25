@@ -1,4 +1,4 @@
-function Parse-GPPXml {
+function Import-GPPXml {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
@@ -112,4 +112,4 @@ function Parse-GPPXml {
     return $settings
 }
 
-Export-ModuleMember -Function Parse-GPPXml
+Export-ModuleMember -Function Import-GPPXml

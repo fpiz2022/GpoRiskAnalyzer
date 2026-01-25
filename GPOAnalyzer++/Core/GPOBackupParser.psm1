@@ -16,14 +16,28 @@ function Get-GPOFromBackup {
         $backupXmlPath = Join-Path $Path "Backup.xml"
         $gpoName = "Unknown GPO"
         $gpoGuid = "Unknown GUID"
-        $domain  = "Unknown Domain"
+        $domain = "Unknown Domain"
 
         if (Test-Path $backupXmlPath) {
             try {
                 [xml]$xml = Get-Content $backupXmlPath
-                $gpoName = $xml.GroupPolicyBackup.GroupPolicyObject.GroupPolicyCoreSettings.DisplayName
-                $gpoGuid = $xml.GroupPolicyBackup.GroupPolicyObject.GroupPolicyCoreSettings.ID
-                $domain  = $xml.GroupPolicyBackup.GroupPolicyObject.GroupPolicyCoreSettings.Domain
+                # Handle varying root elements (GroupPolicyBackupScheme vs GroupPolicyBackup)
+                $gpoObj = $xml.GroupPolicyBackupScheme.GroupPolicyObject
+                if (-not $gpoObj) { $gpoObj = $xml.GroupPolicyBackup.GroupPolicyObject }
+                
+                if ($gpoObj) {
+                    # Use InnerText to correctly handle CDATA sections within the elements
+                    $gpoName = $gpoObj.GroupPolicyCoreSettings.DisplayName.InnerText
+                    if ([string]::IsNullOrEmpty($gpoName)) { 
+                        # Fallback for simple nodes if InnerText is empty (though unlikely for Elements)
+                        $gpoName = $gpoObj.GroupPolicyCoreSettings.DisplayName 
+                    }
+                    
+                    $gpoGuid = $gpoObj.GroupPolicyCoreSettings.ID.InnerText
+                    if ([string]::IsNullOrEmpty($gpoGuid)) { $gpoGuid = $gpoObj.GroupPolicyCoreSettings.ID }
+                    
+                    $domain = $gpoObj.GroupPolicyCoreSettings.Domain.InnerText
+                }
             }
             catch {
                 Write-Warning "Failed to parse Backup.xml in $Path"
@@ -46,23 +60,23 @@ function Get-GPOFromBackup {
         if (Test-Path $computerPol) {
             Write-Verbose "Found Computer Registry.pol at $computerPol"
             try {
-                $polSettings = @(Parse-RegistryPol -Path $computerPol)
+                $polSettings = @(Import-RegistryPol -Path $computerPol)
                 if ($null -eq $polSettings) { Write-Verbose "  > Parse returned null" }
                 else { Write-Verbose "  > Parse returned $($polSettings.Count) entries" }
 
                 foreach ($s in $polSettings) {
                     $settingObj = [PSCustomObject]@{
-                        GPOName          = $gpoName
-                        GPOGuid          = $gpoGuid
-                        SettingType      = "Policy"
-                        Category         = "Administrative Templates"
-                        SubCategory      = "Registry"
-                        RegistryHive     = "HKLM"
-                        RegistryPath     = $s.RegistryPath
-                        ValueName        = $s.ValueName
-                        ValueData        = $s.ValueData
-                        SourceFile       = $s.SourceFile
-                        Context          = "Computer"
+                        GPOName      = $gpoName
+                        GPOGuid      = $gpoGuid
+                        SettingType  = "Policy"
+                        Category     = "Administrative Templates"
+                        SubCategory  = "Registry"
+                        RegistryHive = "HKLM"
+                        RegistryPath = $s.RegistryPath
+                        ValueName    = $s.ValueName
+                        ValueData    = $s.ValueData
+                        SourceFile   = $s.SourceFile
+                        Context      = "Computer"
                     }
                     $allSettings += $settingObj
                 }
@@ -77,20 +91,20 @@ function Get-GPOFromBackup {
         if (Test-Path $userPol) {
             Write-Verbose "Found User Registry.pol at $userPol"
             try {
-                $polSettings = @(Parse-RegistryPol -Path $userPol)
+                $polSettings = @(Import-RegistryPol -Path $userPol)
                 foreach ($s in $polSettings) {
                     $settingObj = [PSCustomObject]@{
-                        GPOName          = $gpoName
-                        GPOGuid          = $gpoGuid
-                        SettingType      = "Policy"
-                        Category         = "Administrative Templates"
-                        SubCategory      = "Registry"
-                        RegistryHive     = "HKCU"
-                        RegistryPath     = $s.RegistryPath
-                        ValueName        = $s.ValueName
-                        ValueData        = $s.ValueData
-                        SourceFile       = $s.SourceFile
-                        Context          = "User"
+                        GPOName      = $gpoName
+                        GPOGuid      = $gpoGuid
+                        SettingType  = "Policy"
+                        Category     = "Administrative Templates"
+                        SubCategory  = "Registry"
+                        RegistryHive = "HKCU"
+                        RegistryPath = $s.RegistryPath
+                        ValueName    = $s.ValueName
+                        ValueData    = $s.ValueData
+                        SourceFile   = $s.SourceFile
+                        Context      = "User"
                     }
                     $allSettings += $settingObj
                 }
@@ -103,7 +117,7 @@ function Get-GPOFromBackup {
         # 3. Parse Group Policy Preferences (XML)
         $prefPaths = @(
             @{ Path = "DomainSysvol\GPO\Machine\Preferences"; Context = "Computer" },
-            @{ Path = "DomainSysvol\GPO\User\Preferences";    Context = "User" }
+            @{ Path = "DomainSysvol\GPO\User\Preferences"; Context = "User" }
         )
 
         foreach ($loc in $prefPaths) {
@@ -112,17 +126,24 @@ function Get-GPOFromBackup {
                 Write-Verbose "Checking preferences at $fullPath"
                 $xmlFiles = Get-ChildItem -Path $fullPath -Recurse -Filter "*.xml"
                 foreach ($file in $xmlFiles) {
-                    if (Get-Command "Parse-GPPXml" -ErrorAction SilentlyContinue) {
+                    if (Get-Command "Import-GPPXml" -ErrorAction SilentlyContinue) {
                         try {
-                            $gppSettings = Parse-GPPXml -Path $file.FullName -Context $loc.Context
-                             foreach ($s in $gppSettings) {
-                                $s | Add-Member -MemberType NoteProperty -Name "GPOName" -Value $gpoName -Force
-                                $s | Add-Member -MemberType NoteProperty -Name "GPOGuid" -Value $gpoGuid -Force
-                                $allSettings += $s
-                             }
+                            $gppSettings = Import-GPPXml -Path $file.FullName -Context $loc.Context
+                            foreach ($s in $gppSettings) {
+                                # Re-create object to enforce property order with GPOName first
+                                $orderedProps = [ordered]@{
+                                    GPOName = $gpoName
+                                    GPOGuid = $gpoGuid
+                                }
+                                # Add valid properties from original object
+                                foreach ($prop in $s.PSObject.Properties) {
+                                    $orderedProps[$prop.Name] = $prop.Value
+                                }
+                                $allSettings += [PSCustomObject]$orderedProps
+                            }
                         }
                         catch {
-                             Write-Verbose "GPP Parsing failed for $($file.Name): $_"
+                            Write-Verbose "GPP Parsing failed for $($file.Name): $_"
                         }
                     }
                 }
