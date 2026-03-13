@@ -72,7 +72,12 @@ function Import-RegistryPol {
 
         # 5. Read Data
         if ($offset + $size -gt $bytes.Length) { break }
-        $rawData = $bytes[$offset..($offset + $size - 1)]
+
+        # Handle empty values safely (size = 0) without creating an invalid range
+        [byte[]]$rawData = @()
+        if ($size -gt 0) {
+            $rawData = $bytes[$offset..($offset + $size - 1)]
+        }
         $offset += $size
 
         # Expand Data based on Type
@@ -80,12 +85,22 @@ function Import-RegistryPol {
         switch ($type) {
             1 { # REG_SZ
                 # Remove trailing nulls if present for display consistency
-                $str = [System.Text.Encoding]::Unicode.GetString($rawData)
-                $dataValue = $str.Trim([char]0)
+                if ($rawData.Length -eq 0) {
+                    $dataValue = ""
+                }
+                else {
+                    $str = [System.Text.Encoding]::Unicode.GetString($rawData)
+                    $dataValue = $str.Trim([char]0)
+                }
             }
             2 { # REG_EXPAND_SZ
-                $str = [System.Text.Encoding]::Unicode.GetString($rawData)
-                $dataValue = $str.Trim([char]0)
+                if ($rawData.Length -eq 0) {
+                    $dataValue = ""
+                }
+                else {
+                    $str = [System.Text.Encoding]::Unicode.GetString($rawData)
+                    $dataValue = $str.Trim([char]0)
+                }
             }
             3 { # REG_BINARY
                 $dataValue = [BitConverter]::ToString($rawData)
@@ -98,8 +113,13 @@ function Import-RegistryPol {
                 }
             }
             7 { # REG_MULTI_SZ
-                $str = [System.Text.Encoding]::Unicode.GetString($rawData)
-                $dataValue = $str.Split([char]0) | Where-Object { $_ -ne "" }
+                if ($rawData.Length -eq 0) {
+                    $dataValue = @()
+                }
+                else {
+                    $str = [System.Text.Encoding]::Unicode.GetString($rawData)
+                    $dataValue = $str.Split([char]0) | Where-Object { $_ -ne "" }
+                }
             }
             11 { # REG_QWORD
                 if ($rawData.Length -ge 8) {
