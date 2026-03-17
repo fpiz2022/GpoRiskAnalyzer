@@ -30,6 +30,9 @@ function Show-UI {
     $gridResults = $window.FindName("gridResults")
     $txtStatus = $window.FindName("txtStatus")
 
+    $menuCheckConsistencyLoaded = $window.FindName("menuCheckConsistencyLoaded")
+    $menuCheckConsistencyAll = $window.FindName("menuCheckConsistencyAll")
+
     $script:loadedSettings = @()
     $script:analysisResults = @()
 
@@ -289,6 +292,95 @@ function Show-UI {
                 }
             }
         })
+
+    # --- ESERVICES ---
+    function Show-ConsistencyResults {
+        param(
+            [Parameter(Mandatory=$true)]
+            $Data,
+            [string]$Title = "Consistency Check Results"
+        )
+
+        $xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        Title="$Title" Height="400" Width="800" Background="#1e293b">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <DataGrid Name="grid" AutoGenerateColumns="True" IsReadOnly="True" Background="#0f172a" Foreground="#e2e8f0" RowBackground="#1e293b" AlternatingRowBackground="#334155"/>
+        <Button Name="btnClose" Grid.Row="1" Content="Close" Width="100" HorizontalAlignment="Right" Margin="0,10,0,0" Padding="5"/>
+    </Grid>
+</Window>
+"@
+        $win = [Windows.Markup.XamlReader]::Parse($xaml)
+        $grid = $win.FindName("grid")
+        $grid.ItemsSource = $Data
+
+        $btnClose = $win.FindName("btnClose")
+        $btnClose.Add_Click({ $win.Close() })
+
+        $win.ShowDialog() | Out-Null
+    }
+
+    $menuCheckConsistencyLoaded.Add_Click({
+        Log-Message "Action: Check GPC/GPT Consistency for Loaded GPOs"
+        if ($script:loadedSettings.Count -eq 0) {
+            [System.Windows.MessageBox]::Show("nessuna GPO caricata per la comparazione`nimpossibile eseguire il controllo scoped", "Warning")
+            return
+        }
+
+        $uniqueGuids = $script:loadedSettings | Select-Object -ExpandProperty GPOGuid -Unique
+        $txtStatus.Text = "Checking consistency for loaded GPOs..."
+
+        try {
+            $res = Get-GPCGPTConsistency -TargetGuids $uniqueGuids
+            Show-ConsistencyResults -Data $res -Title "Scoped Consistency Check"
+            $txtStatus.Text = "Scoped consistency check complete."
+        }
+        catch {
+            Log-Message "Error in Scoped Consistency Check: $_"
+            [System.Windows.MessageBox]::Show("Error: $_", "Error")
+        }
+    })
+
+    $menuCheckConsistencyAll.Add_Click({
+        Log-Message "Action: Check GPC/GPT Consistency for All Domain GPOs"
+        $txtStatus.Text = "Performing full domain consistency check..."
+
+        try {
+            $res = Get-GPCGPTConsistency
+
+            # Summary Calculation
+            $total = $res.Count
+            $ok = ($res | Where-Object { $_.Status -eq "OK" }).Count
+            $missingSysvol = ($res | Where-Object { $_.Status -eq "Missing_SYSVOL" }).Count
+            $orphanSysvol = ($res | Where-Object { $_.Status -eq "Orphan_SYSVOL" }).Count
+            $mismatch = ($res | Where-Object { $_.Status -eq "Version_Mismatch" }).Count
+
+            $summary = "Full Domain Consistency Check Summary:`n`n" +
+                       "Total GPOs analyzed: $total`n" +
+                       "OK: $ok`n" +
+                       "Missing in SYSVOL: $missingSysvol`n" +
+                       "Orphan in SYSVOL: $orphanSysvol`n" +
+                       "Version Mismatch: $mismatch"
+
+            [System.Windows.MessageBox]::Show($summary, "Consistency Check Summary")
+
+            # Save detailed report
+            $reportPath = Join-Path $PSScriptRoot "..\ConsistencyReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+            $res | Export-Csv -Path $reportPath -NoTypeInformation
+            Log-Message "Detailed report saved to: $reportPath"
+
+            Show-ConsistencyResults -Data $res -Title "Full Domain Consistency Check"
+            $txtStatus.Text = "Full domain consistency check complete. Report saved."
+        }
+        catch {
+            Log-Message "Error in Full Domain Consistency Check: $_"
+            [System.Windows.MessageBox]::Show("Error: $_", "Error")
+        }
+    })
 
     # --- EXPORT ---
     $btnExport.Add_Click({

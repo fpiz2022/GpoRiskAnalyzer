@@ -217,7 +217,15 @@
         </Style>
     </Window.Resources>
     
-    <Grid Margin="10,8">
+    <DockPanel>
+        <Menu DockPanel.Dock="Top" Background="#1e293b" Foreground="White" Padding="5">
+            <MenuItem Header="_eServices" Foreground="White">
+                <MenuItem x:Name="menuCheckConsistencyLoaded" Header="Check GPC/GPT Consistency for _Loaded Comparison GPOs" />
+                <MenuItem x:Name="menuCheckConsistencyAll" Header="Check GPC/GPT Consistency for _All Domain GPOs" />
+            </MenuItem>
+        </Menu>
+
+        <Grid Margin="10,8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -317,5 +325,6 @@
             </StatusBarItem>
         </StatusBar>
     </Grid>
+    </DockPanel>
 </Window>
 
