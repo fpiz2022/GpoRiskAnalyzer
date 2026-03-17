@@ -359,13 +359,15 @@ function Show-UI {
             $missingSysvol = ($res | Where-Object { $_.Status -eq "Missing_SYSVOL" }).Count
             $orphanSysvol = ($res | Where-Object { $_.Status -eq "Orphan_SYSVOL" }).Count
             $mismatch = ($res | Where-Object { $_.Status -eq "Version_Mismatch" }).Count
+            $gppSecrets = ($res | Where-Object { $_.HasGPPSecrets -eq $true }).Count
 
             $summary = "Full Domain Consistency Check Summary:`n`n" +
                        "Total GPOs analyzed: $total`n" +
                        "OK: $ok`n" +
                        "Missing in SYSVOL: $missingSysvol`n" +
                        "Orphan in SYSVOL: $orphanSysvol`n" +
-                       "Version Mismatch: $mismatch"
+                       "Version Mismatch: $mismatch`n" +
+                       "GPOs with GPP Secrets (cpassword): $gppSecrets"
 
             [System.Windows.MessageBox]::Show($summary, "Consistency Check Summary")
 

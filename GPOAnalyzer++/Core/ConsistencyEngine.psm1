@@ -99,10 +99,24 @@ function Get-GPCGPTConsistency {
                         }
                     }
 
+                    # GPP Secret Audit (Scan XMLs for 'cpassword')
+                    $hasGppSecrets = $false
+                    try {
+                        $xmlFiles = Get-ChildItem -Path $f.FullName -Recurse -Filter "*.xml" -ErrorAction SilentlyContinue
+                        foreach ($xml in $xmlFiles) {
+                            # Using Select-String for performance instead of full XML parsing
+                            if (Select-String -Path $xml.FullName -Pattern 'cpassword="' -Quiet) {
+                                $hasGppSecrets = $true
+                                break
+                            }
+                        }
+                    } catch {}
+
                     $gptData[$id] = @{
                         Version = $version
                         Present = $true
                         Path    = $f.FullName
+                        HasGppSecrets = $hasGppSecrets
                     }
                 }
             }
@@ -130,6 +144,7 @@ function Get-GPCGPTConsistency {
 
         $versionMatch = "Unknown"
         $status = "OK"
+        $gppSecretsFound = if ($gpt) { $gpt.HasGppSecrets } else { $false }
 
         if ($gpcPresent -and $gptPresent) {
             if ($null -ne $gpc.Version -and $null -ne $gpt.Version) {
@@ -144,9 +159,6 @@ function Get-GPCGPTConsistency {
             }
             else {
                 $versionMatch = "Unknown"
-                # If we have both but can't read version, maybe it's OK or maybe Mismatch?
-                # Requirement says Version_Mismatch when versions are not coherent.
-                # If one is null, we can't say they are coherent.
                 $status = "Version_Mismatch"
             }
         }
@@ -160,12 +172,13 @@ function Get-GPCGPTConsistency {
         }
 
         $results += [PSCustomObject]@{
-            GPOName      = $gpoName
-            GUID         = $guid
-            GPC_Present  = $gpcPresent
-            GPT_Present  = $gptPresent
-            VersionMatch = $versionMatch
-            Status       = $status
+            GPOName       = $gpoName
+            GUID          = $guid
+            GPC_Present   = $gpcPresent
+            GPT_Present   = $gptPresent
+            VersionMatch  = $versionMatch
+            Status        = $status
+            HasGPPSecrets = $gppSecretsFound
         }
     }
 
