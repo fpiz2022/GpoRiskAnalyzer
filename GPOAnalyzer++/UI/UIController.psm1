@@ -37,6 +37,31 @@ function Show-UI {
     $script:loadedSettings = @()
     $script:analysisResults = @()
 
+    # Helper for async execution
+    function Run-Async {
+        param(
+            [scriptblock]$Job,
+            [scriptblock]$OnComplete,
+            [string]$StatusMsg = "Processing..."
+        )
+        $txtStatus.Text = $StatusMsg
+        $window.Cursor = [System.Windows.Input.Cursors]::Wait
+
+        # We use a BackgroundWorker or simple Job for PS context.
+        # For WPF in PS, a simpler approach is to use the Dispatcher but jobs are truly async.
+        Start-ThreadJob -ScriptBlock {
+            param($b, $ctx)
+            try { return & $b } catch { throw $_ }
+        } -ArgumentList $Job, $PSScriptRoot | Wait-Job | Receive-Job | ForEach-Object {
+            $result = $_
+            $window.Dispatcher.Invoke([Action]{
+                & $OnComplete $result
+                $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+                $txtStatus.Text = "Ready"
+            })
+        }
+    }
+
     # --- BROWSE ---
     $btnBrowse.Add_Click({
             $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
@@ -65,37 +90,40 @@ function Show-UI {
             $txtStatus.Text = "Loading..."
             $window.Cursor = [System.Windows.Input.Cursors]::Wait
 
-            # Using Start-Job or simple async would be better, but keeping sync for stability in this script scope
-            try {
-                $script:loadedSettings = @()
-             
-                # Single GPO Check
-                if ((Test-Path "$path\Backup.xml") -or (Test-Path "$path\DomainSysvol")) {
-                    $script:loadedSettings += Get-GPOFromBackup -Path $path
+            # Run Load in Background
+            $script:loadedSettings = @()
+            $job = {
+                param($p)
+                Import-Module "$p\Core\GPOBackupParser.psm1" -Force
+                Import-Module "$p\Core\RegistryPolParser.psm1" -Force
+                Import-Module "$p\Core\GPPXmlParser.psm1" -Force
+
+                $data = @()
+                if ((Test-Path "$using:path\Backup.xml") -or (Test-Path "$using:path\DomainSysvol")) {
+                    $data += Get-GPOFromBackup -Path $using:path
                 }
                 else {
-                    # Multi GPO Check
-                    $subfolders = Get-ChildItem -Path $path -Directory
+                    $subfolders = Get-ChildItem -Path $using:path -Directory
                     foreach ($dir in $subfolders) {
                         if ((Test-Path "$($dir.FullName)\Backup.xml") -or (Test-Path "$($dir.FullName)\DomainSysvol")) {
-                            $s = Get-GPOFromBackup -Path $dir.FullName
-                            $script:loadedSettings += $s
+                            $data += Get-GPOFromBackup -Path $dir.FullName
                         }
                     }
                 }
-             
-                $count = $script:loadedSettings.Count
-                $txtStatus.Text = "Loaded $count settings."
-                $gridResults.ItemsSource = $script:loadedSettings
-                Update-FilterColumns -Data $script:loadedSettings
-                Log-Message "Loaded $count items."
+                return $data
             }
-            catch {
-                [System.Windows.MessageBox]::Show("Error: $_", "Error")
-                Log-Message "Error: $_"
-            }
-            finally {
-                $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+
+            Start-ThreadJob -ScriptBlock $job -ArgumentList $PSScriptRoot | ForEach-Object {
+                $results = $_ | Wait-Job | Receive-Job
+                $window.Dispatcher.Invoke([Action]{
+                    $script:loadedSettings = $results
+                    $count = $script:loadedSettings.Count
+                    $txtStatus.Text = "Loaded $count settings."
+                    $gridResults.ItemsSource = $script:loadedSettings
+                    Update-FilterColumns -Data $script:loadedSettings
+                    Log-Message "Loaded $count items."
+                    $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+                })
             }
         })
 
@@ -107,86 +135,86 @@ function Show-UI {
             }
 
             $txtStatus.Text = "Analyzing..."
-            $uniqueGPOs = $script:loadedSettings | Select-Object -ExpandProperty GPOName -Unique
+            $window.Cursor = [System.Windows.Input.Cursors]::Wait
 
-            if ($uniqueGPOs.Count -gt 1) {
-                # Diff
-                $gpo1 = $uniqueGPOs[0]
-                $gpo2 = $uniqueGPOs[1]
-                $set1 = $script:loadedSettings | Where-Object { $_.GPOName -eq $gpo1 }
-                $set2 = $script:loadedSettings | Where-Object { $_.GPOName -eq $gpo2 }
-            
-                $diff = Compare-GPO -ReferenceSettings $set1 -DifferenceSettings $set2
-                $res = $diff | Get-TattooingRisk
-            
-                # Reorder and map columns
-                $finalList = @()
-                foreach ($r in $res) {
-                    $props = [ordered]@{
-                        Status          = $r.Status
-                        SettingType     = $r.SettingType
-                        Parameter       = $r.Parameter
-                        Key             = $r.Path  # Map internal Path (RegistryPath) to UI 'Key'
-                        RefValue        = $r.RefValue
-                        DiffValue       = $r.DiffValue
-                        Context         = $r.Context
-                        Path            = $r.RefSource # Map internal RefSource to UI 'Path' (Source File)
-                        TattooingRisk   = $r.TattooingRisk
-                        TattooingReason = $r.TattooingReason
-                    }
-                    # Add remaining properties dynamically if not already present
-                    foreach ($p in $r.PSObject.Properties) {
-                        if (-not $props.Contains($p.Name)) {
-                            $props[$p.Name] = $p.Value
+            $job = {
+                param($p, $settings)
+                Import-Module "$p\Core\DiffEngine.psm1" -Force
+                Import-Module "$p\Core\TattooingAnalyzer.psm1" -Force
+
+                $uniqueGPOs = $settings | Select-Object -ExpandProperty GPOName -Unique
+
+                if ($uniqueGPOs.Count -gt 1) {
+                    $gpo1 = $uniqueGPOs[0]
+                    $gpo2 = $uniqueGPOs[1]
+                    $set1 = $settings | Where-Object { $_.GPOName -eq $gpo1 }
+                    $set2 = $settings | Where-Object { $_.GPOName -eq $gpo2 }
+
+                    $diff = Compare-GPO -ReferenceSettings $set1 -DifferenceSettings $set2
+                    $res = $diff | Get-TattooingRisk
+
+                    $finalList = @()
+                    foreach ($r in $res) {
+                        $props = [ordered]@{
+                            Status          = $r.Status
+                            SettingType     = $r.SettingType
+                            Parameter       = $r.Parameter
+                            Key             = $r.Path
+                            RefValue        = $r.RefValue
+                            DiffValue       = $r.DiffValue
+                            Context         = $r.Context
+                            Path            = $r.RefSource
+                            TattooingRisk   = $r.TattooingRisk
+                            TattooingReason = $r.TattooingReason
                         }
+                        foreach ($p in $r.PSObject.Properties) {
+                            if (-not $props.Contains($p.Name)) { $props[$p.Name] = $p.Value }
+                        }
+                        $finalList += [PSCustomObject]$props
                     }
-                    $finalList += [PSCustomObject]$props
+                    return @{ List = $finalList; Msg = "Comparison Complete ($gpo1 vs $gpo2)." }
                 }
-
-                $script:analysisResults = $finalList
-                $gridResults.ItemsSource = $finalList
-                Update-FilterColumns -Data $finalList
-                $txtStatus.Text = "Comparison Complete ($gpo1 vs $gpo2)."
+                else {
+                    $res = @()
+                    foreach ($item in $settings) {
+                        $w = [PSCustomObject]@{ Status = "ACTIVE"; RefObject = $null; DiffObject = $item }
+                        $risk = Get-TattooingRisk -ComparisonItem $w
+                        $flat = [ordered]@{
+                            Status          = "ACTIVE"
+                            SettingType     = $item.SettingType
+                            Parameter       = $item.ValueName
+                            Key             = $item.RegistryPath
+                            RefValue        = $item.ValueData
+                            DiffValue       = $null
+                            Context         = $item.Context
+                            Path            = $item.SourceFile
+                            TattooingRisk   = $risk.TattooingRisk
+                            TattooingReason = $risk.TattooingReason
+                            Category        = $item.Category
+                            GPOName         = $item.GPOName
+                        }
+                        $res += [PSCustomObject]$flat
+                    }
+                    return @{ List = $res; Msg = "Audit Complete." }
+                }
             }
-            else {
-                # Audit
-                $res = @()
-                foreach ($item in $script:loadedSettings) {
-                    $w = [PSCustomObject]@{ Status = "ACTIVE"; RefObject = $null; DiffObject = $item }
-                    $risk = Get-TattooingRisk -ComparisonItem $w
-                    
-                    $flat = [ordered]@{
-                        Status          = "ACTIVE"
-                        SettingType     = $item.SettingType
-                        Parameter       = $item.ValueName
-                        Key             = $item.RegistryPath
-                        RefValue        = $item.ValueData
-                        DiffValue       = $null
-                        Context         = $item.Context
-                        Path            = $item.SourceFile
-                        TattooingRisk   = $risk.TattooingRisk
-                        TattooingReason = $risk.TattooingReason
-                        
-                        Category        = $item.Category
-                        GPOName         = $item.GPOName
-                    }
-                    $res += [PSCustomObject]$flat
-                }
-                $script:analysisResults = $res
-                $gridResults.ItemsSource = $res
-                Update-FilterColumns -Data $res
-                $txtStatus.Text = "Audit Complete."
+
+            Start-ThreadJob -ScriptBlock $job -ArgumentList $PSScriptRoot, $script:loadedSettings | ForEach-Object {
+                $out = $_ | Wait-Job | Receive-Job
+                $window.Dispatcher.Invoke([Action]{
+                    $script:analysisResults = $out.List
+                    $gridResults.ItemsSource = $out.List
+                    Update-FilterColumns -Data $out.List
+                    $txtStatus.Text = $out.Msg
+                    $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+                })
             }
         })
 
     # --- GRID COLUMN AUTO-GENERATE ---
     $gridResults.add_AutoGeneratingColumn({
             param($s, $e)
-        
-            # Set a MaxWidth to prevent long text from making columns too wide
             $e.Column.MaxWidth = 450
-        
-            # Specific widths for known columns
             switch ($e.PropertyName) {
                 "Status" { $e.Column.Width = 100 }
                 "SettingType" { $e.Column.Width = 120 }
@@ -205,52 +233,35 @@ function Show-UI {
     $txtFilter = $window.FindName("txtFilter")
     $cmbFilterColumn = $window.FindName("cmbFilterColumn")
 
-    # Helper to update filter columns based on current data
     function Update-FilterColumns {
         param($Data)
         if ($null -eq $Data -or $Data.Count -eq 0) { return }
-        
         $currentSelection = $cmbFilterColumn.Text
         $cmbFilterColumn.Items.Clear()
-        
-        # Get properties from the first item, excluding internal properties
         $ignore = @("RefObject", "DiffObject", "RefSource", "DiffSource", "DiffGPOName", "RefGPOName")
-        $firstItem = $Data[0]
-        $props = $firstItem.PSObject.Properties | 
-        Where-Object { $_.Name -notin $ignore } | 
-        Select-Object -ExpandProperty Name
-        
+        $props = $Data[0].PSObject.Properties | Where-Object { $_.Name -notin $ignore } | Select-Object -ExpandProperty Name
         foreach ($p in $props) {
             $item = New-Object System.Windows.Controls.ComboBoxItem
             $item.Content = $p
             if ($p -eq $currentSelection) { $item.IsSelected = $true }
             $cmbFilterColumn.Items.Add($item)
         }
-        
-        # Default selection if nothing selected
         if ([string]::IsNullOrWhiteSpace($cmbFilterColumn.Text) -and $cmbFilterColumn.Items.Count -gt 0) {
             $cmbFilterColumn.SelectedIndex = 0
         }
     }
 
-    # Helper to apply filter
     function Apply-Filter {
         $view = [System.Windows.Data.CollectionViewSource]::GetDefaultView($gridResults.ItemsSource)
         if (-not $view) { return }
-        
         $text = $txtFilter.Text
-        if ([string]::IsNullOrWhiteSpace($text)) {
-            $view.Filter = $null
-        }
+        if ([string]::IsNullOrWhiteSpace($text)) { $view.Filter = $null }
         else {
             $colName = $cmbFilterColumn.Text
-            if ($null -eq $colName) { $colName = "Status" } # Fallback
-            
+            if ($null -eq $colName) { $colName = "Status" }
             $view.Filter = [Predicate[object]] { 
                 param($item) 
                 if ($null -eq $item) { return $false }
-                
-                # Dynamic property access
                 $val = $item.$colName
                 if ($null -eq $val) { return $false }
                 return [string]$val -match [regex]::Escape($text)
@@ -262,33 +273,23 @@ function Show-UI {
     $txtFilter.Add_TextChanged({ Apply-Filter })
     $cmbFilterColumn.Add_SelectionChanged({ Apply-Filter })
     
-    # Auto-select column on click (sync DataGrid selection to ComboBox)
     $gridResults.Add_CurrentCellChanged({
-            # Only change column automatically if the search box is empty
-            # to avoid breaking current search results
             if ([string]::IsNullOrWhiteSpace($txtFilter.Text)) {
                 if ($gridResults.CurrentCell -and $gridResults.CurrentCell.Column) {
                     $header = $gridResults.CurrentCell.Column.Header
-                    if ($header -is [string]) {
-                        $cmbFilterColumn.Text = $header
-                    }
+                    if ($header -is [string]) { $cmbFilterColumn.Text = $header }
                 }
             }
         })
 
-    # Get Cell Detail TextBox
     $txtCellDetail = $window.FindName("txtCellDetail")
-
-    # Double-click to show full cell value in detail box
     $gridResults.Add_MouseDoubleClick({
             if ($gridResults.CurrentCell -and $gridResults.CurrentCell.Column -and $gridResults.CurrentItem) {
                 $columnName = $gridResults.CurrentCell.Column.Header
                 $item = $gridResults.CurrentItem
-            
                 if ($columnName -and $item) {
                     $value = $item.$columnName
                     if ($null -eq $value) { $value = "(null)" }
-                
                     $txtCellDetail.Text = "[$columnName]: $value"
                 }
             }
@@ -296,160 +297,110 @@ function Show-UI {
 
     # --- ESERVICES ---
     function Show-ConsistencyResults {
-        param(
-            [Parameter(Mandatory=$true)]
-            $Data,
-            [string]$Title = "Consistency Check Results"
-        )
-
+        param([Parameter(Mandatory=$true)]$Data, [string]$Title = "Consistency Check Results")
         $xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         Title="$Title" Height="400" Width="800" Background="#1e293b">
     <Grid Margin="10">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <DataGrid Name="grid" AutoGenerateColumns="True" IsReadOnly="True" Background="#0f172a" Foreground="#e2e8f0" RowBackground="#1e293b" AlternatingRowBackground="#334155"/>
         <Button Name="btnClose" Grid.Row="1" Content="Close" Width="100" HorizontalAlignment="Right" Margin="0,10,0,0" Padding="5"/>
     </Grid>
 </Window>
 "@
         $win = [Windows.Markup.XamlReader]::Parse($xaml)
-        $grid = $win.FindName("grid")
-        $grid.ItemsSource = $Data
-
-        $btnClose = $win.FindName("btnClose")
-        $btnClose.Add_Click({ $win.Close() })
-
+        $win.FindName("grid").ItemsSource = $Data
+        $win.FindName("btnClose").Add_Click({ $win.Close() })
         $win.ShowDialog() | Out-Null
     }
 
     $menuCheckConsistencyLoaded.Add_Click({
-        Log-Message "Action: Check GPC/GPT Consistency for Loaded GPOs"
         if ($script:loadedSettings.Count -eq 0) {
             [System.Windows.MessageBox]::Show("nessuna GPO caricata per la comparazione`nimpossibile eseguire il controllo scoped", "Warning")
             return
         }
+        $guids = $script:loadedSettings | Select-Object -ExpandProperty GPOGuid -Unique
+        $window.Cursor = [System.Windows.Input.Cursors]::Wait
+        $txtStatus.Text = "Checking consistency..."
 
-        $uniqueGuids = $script:loadedSettings | Select-Object -ExpandProperty GPOGuid -Unique
-        $txtStatus.Text = "Checking consistency for loaded GPOs..."
-
-        try {
-            $res = Get-GPCGPTConsistency -TargetGuids $uniqueGuids
-            Show-ConsistencyResults -Data $res -Title "Scoped Consistency Check"
-            $txtStatus.Text = "Scoped consistency check complete."
-        }
-        catch {
-            Log-Message "Error in Scoped Consistency Check: $_"
-            [System.Windows.MessageBox]::Show("Error: $_", "Error")
+        Start-ThreadJob -ScriptBlock {
+            param($p, $g)
+            Import-Module "$p\Core\ConsistencyEngine.psm1" -Force
+            return Get-GPCGPTConsistency -TargetGuids $g
+        } -ArgumentList $PSScriptRoot, $guids | ForEach-Object {
+            $res = $_ | Wait-Job | Receive-Job
+            $window.Dispatcher.Invoke([Action]{
+                Show-ConsistencyResults -Data $res -Title "Scoped Consistency Check"
+                $txtStatus.Text = "Ready"
+                $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+            })
         }
     })
 
     $menuCheckConsistencyAll.Add_Click({
-        Log-Message "Action: Check GPC/GPT Consistency for All Domain GPOs"
+        $window.Cursor = [System.Windows.Input.Cursors]::Wait
         $txtStatus.Text = "Performing full domain consistency check..."
 
-        try {
-            $res = Get-GPCGPTConsistency
+        Start-ThreadJob -ScriptBlock {
+            param($p)
+            Import-Module "$p\Core\ConsistencyEngine.psm1" -Force
+            return Get-GPCGPTConsistency
+        } -ArgumentList $PSScriptRoot | ForEach-Object {
+            $res = $_ | Wait-Job | Receive-Job
+            $window.Dispatcher.Invoke([Action]{
+                $total = $res.Count
+                $ok = ($res | Where-Object { $_.Status -eq "OK" }).Count
+                $missingSysvol = ($res | Where-Object { $_.Status -eq "Missing_SYSVOL" }).Count
+                $orphanSysvol = ($res | Where-Object { $_.Status -eq "Orphan_SYSVOL" }).Count
+                $mismatch = ($res | Where-Object { $_.Status -eq "Version_Mismatch" }).Count
+                $gppSecrets = ($res | Where-Object { $_.HasGPPSecrets -eq $true }).Count
 
-            # Summary Calculation
-            $total = $res.Count
-            $ok = ($res | Where-Object { $_.Status -eq "OK" }).Count
-            $missingSysvol = ($res | Where-Object { $_.Status -eq "Missing_SYSVOL" }).Count
-            $orphanSysvol = ($res | Where-Object { $_.Status -eq "Orphan_SYSVOL" }).Count
-            $mismatch = ($res | Where-Object { $_.Status -eq "Version_Mismatch" }).Count
-            $gppSecrets = ($res | Where-Object { $_.HasGPPSecrets -eq $true }).Count
+                $summary = "Full Domain Consistency Check Summary:`n`nTotal: $total`nOK: $ok`nMissing: $missingSysvol`nOrphan: $orphanSysvol`nMismatch: $mismatch`nGPP Secrets: $gppSecrets"
+                [System.Windows.MessageBox]::Show($summary, "Summary")
 
-            $summary = "Full Domain Consistency Check Summary:`n`n" +
-                       "Total GPOs analyzed: $total`n" +
-                       "OK: $ok`n" +
-                       "Missing in SYSVOL: $missingSysvol`n" +
-                       "Orphan in SYSVOL: $orphanSysvol`n" +
-                       "Version Mismatch: $mismatch`n" +
-                       "GPOs with GPP Secrets (cpassword): $gppSecrets"
-
-            [System.Windows.MessageBox]::Show($summary, "Consistency Check Summary")
-
-            # Save detailed report
-            $reportPath = Join-Path $PSScriptRoot "..\ConsistencyReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
-            $res | Export-Csv -Path $reportPath -NoTypeInformation
-            Log-Message "Detailed report saved to: $reportPath"
-
-            Show-ConsistencyResults -Data $res -Title "Full Domain Consistency Check"
-            $txtStatus.Text = "Full domain consistency check complete. Report saved."
-        }
-        catch {
-            Log-Message "Error in Full Domain Consistency Check: $_"
-            [System.Windows.MessageBox]::Show("Error: $_", "Error")
+                $reportPath = Join-Path $PSScriptRoot "..\ConsistencyReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+                $res | Export-Csv -Path $reportPath -NoTypeInformation
+                Show-ConsistencyResults -Data $res -Title "Full Domain Consistency Check"
+                $txtStatus.Text = "Ready"
+                $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+            })
         }
     })
 
     $menuExportDCInventory.Add_Click({
-        Log-Message "Action: Export Domain Controllers Inventory triggered."
-        $txtStatus.Text = "Inventorying Domain Controllers..."
         $window.Cursor = [System.Windows.Input.Cursors]::Wait
+        $txtStatus.Text = "Inventorying Domain Controllers..."
 
-        try {
-            $inventory = Get-DomainControllersInventory
-            if ($inventory.Count -eq 0) {
-                [System.Windows.MessageBox]::Show("No Domain Controllers found or error during discovery.", "Information")
-                return
-            }
+        Start-ThreadJob -ScriptBlock {
+            param($p)
+            Import-Module "$p\Core\DomainInventory.psm1" -Force
+            # Note: Get-DomainControllersInventory now internally uses parallel jobs
+            return Get-DomainControllersInventory
+        } -ArgumentList $PSScriptRoot | ForEach-Object {
+            $inventory = $_ | Wait-Job | Receive-Job
+            $window.Dispatcher.Invoke([Action]{
+                if ($inventory.Count -eq 0) { [System.Windows.MessageBox]::Show("No DC found.", "Info"); return }
 
-            # Summary Calculation
-            $total = $inventory.Count
-            $ok = ($inventory | Where-Object { $_.Status -eq "OK" }).Count
-            $partial = ($inventory | Where-Object { $_.Status -eq "Partial" }).Count
-            $unreachable = ($inventory | Where-Object { $_.Status -eq "Unreachable" }).Count
-            $others = $total - $ok - $partial - $unreachable
-
-            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-            $defaultPath = Join-Path $PSScriptRoot "..\DC_Inventory_$timestamp.csv"
-
-            $dlg = New-Object System.Windows.Forms.SaveFileDialog
-            $dlg.Title = "Save Domain Controllers Inventory"
-            $dlg.Filter = "CSV File|*.csv"
-            $dlg.FileName = $defaultPath
-
-            if ($dlg.ShowDialog() -eq 'OK') {
-                $inventory | Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding utf8
-
-                $summary = "Domain Controllers Inventory Complete.`n`n" +
-                           "Total DC found: $total`n" +
-                           "Successfully processed: $ok`n" +
-                           "Partial data: $partial`n" +
-                           "Unreachable: $unreachable`n" +
-                           "Other errors: $others`n`n" +
-                           "Report saved to: $($dlg.FileName)"
-
-                [System.Windows.MessageBox]::Show($summary, "Inventory Summary")
-                Log-Message "Inventory exported to $($dlg.FileName)"
-            }
-        }
-        catch {
-            Log-Message "ERROR during DC Inventory: $_"
-            [System.Windows.MessageBox]::Show("An error occurred: $_", "Error")
-        }
-        finally {
-            $window.Cursor = [System.Windows.Input.Cursors]::Arrow
-            $txtStatus.Text = "Ready"
+                $dlg = New-Object System.Windows.Forms.SaveFileDialog
+                $dlg.Filter = "CSV File|*.csv"
+                if ($dlg.ShowDialog() -eq 'OK') {
+                    $inventory | Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding utf8
+                    [System.Windows.MessageBox]::Show("Inventory exported to $($dlg.FileName)", "Success")
+                }
+                $txtStatus.Text = "Ready"
+                $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+            })
         }
     })
 
     # --- EXPORT ---
     $btnExport.Add_Click({
             if ($null -eq $script:analysisResults -or $script:analysisResults.Count -eq 0) { return }
-        
             $dlg = New-Object System.Windows.Forms.SaveFileDialog
             $dlg.Filter = "HTML Report|*.html|CSV|*.csv"
             if ($dlg.ShowDialog() -eq 'OK') {
-                if ($dlg.FileName.EndsWith(".html")) {
-                    Export-ToHtml -Data $script:analysisResults -Path $dlg.FileName
-                }
-                else {
-                    $script:analysisResults | Export-Csv -Path $dlg.FileName -NoTypeInformation
-                }
+                if ($dlg.FileName.EndsWith(".html")) { Export-ToHtml -Data $script:analysisResults -Path $dlg.FileName }
+                else { $script:analysisResults | Export-Csv -Path $dlg.FileName -NoTypeInformation }
                 [System.Windows.MessageBox]::Show("Exported.", "Success")
             }
         })
