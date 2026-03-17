@@ -32,6 +32,7 @@ function Show-UI {
 
     $menuCheckConsistencyLoaded = $window.FindName("menuCheckConsistencyLoaded")
     $menuCheckConsistencyAll = $window.FindName("menuCheckConsistencyAll")
+    $menuExportDCInventory = $window.FindName("menuExportDCInventory")
 
     $script:loadedSettings = @()
     $script:analysisResults = @()
@@ -379,6 +380,58 @@ function Show-UI {
         catch {
             Log-Message "Error in Full Domain Consistency Check: $_"
             [System.Windows.MessageBox]::Show("Error: $_", "Error")
+        }
+    })
+
+    $menuExportDCInventory.Add_Click({
+        Log-Message "Action: Export Domain Controllers Inventory triggered."
+        $txtStatus.Text = "Inventorying Domain Controllers..."
+        $window.Cursor = [System.Windows.Input.Cursors]::Wait
+
+        try {
+            $inventory = Get-DomainControllersInventory
+            if ($inventory.Count -eq 0) {
+                [System.Windows.MessageBox]::Show("No Domain Controllers found or error during discovery.", "Information")
+                return
+            }
+
+            # Summary Calculation
+            $total = $inventory.Count
+            $ok = ($inventory | Where-Object { $_.Status -eq "OK" }).Count
+            $partial = ($inventory | Where-Object { $_.Status -eq "Partial" }).Count
+            $unreachable = ($inventory | Where-Object { $_.Status -eq "Unreachable" }).Count
+            $others = $total - $ok - $partial - $unreachable
+
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $defaultPath = Join-Path $PSScriptRoot "..\DC_Inventory_$timestamp.csv"
+
+            $dlg = New-Object System.Windows.Forms.SaveFileDialog
+            $dlg.Title = "Save Domain Controllers Inventory"
+            $dlg.Filter = "CSV File|*.csv"
+            $dlg.FileName = $defaultPath
+
+            if ($dlg.ShowDialog() -eq 'OK') {
+                $inventory | Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding utf8
+
+                $summary = "Domain Controllers Inventory Complete.`n`n" +
+                           "Total DC found: $total`n" +
+                           "Successfully processed: $ok`n" +
+                           "Partial data: $partial`n" +
+                           "Unreachable: $unreachable`n" +
+                           "Other errors: $others`n`n" +
+                           "Report saved to: $($dlg.FileName)"
+
+                [System.Windows.MessageBox]::Show($summary, "Inventory Summary")
+                Log-Message "Inventory exported to $($dlg.FileName)"
+            }
+        }
+        catch {
+            Log-Message "ERROR during DC Inventory: $_"
+            [System.Windows.MessageBox]::Show("An error occurred: $_", "Error")
+        }
+        finally {
+            $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+            $txtStatus.Text = "Ready"
         }
     })
 

@@ -222,6 +222,8 @@
             <MenuItem Header="_eServices" Foreground="White">
                 <MenuItem x:Name="menuCheckConsistencyLoaded" Header="Check GPC/GPT Consistency for _Loaded Comparison GPOs" />
                 <MenuItem x:Name="menuCheckConsistencyAll" Header="Check GPC/GPT Consistency for _All Domain GPOs" />
+                <Separator Background="#475569" />
+                <MenuItem x:Name="menuExportDCInventory" Header="Export _Domain Controllers Inventory" />
             </MenuItem>
         </Menu>
 
