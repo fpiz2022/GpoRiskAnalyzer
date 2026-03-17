@@ -8,6 +8,12 @@ GPO Analyzer ++ is a modern tool for analyzing, comparing, and auditing Group Po
 - **Diff Engine**: Compares two GPOs to find Added, Removed, and Modified settings.
 - **Tattooing Risk**: Identifies settings that might persist (tattoo) the registry based on heuristics.
 - **Reporting**: Exports rich HTML reports with search and filter capabilities.
+- **eServices (Beta)**:
+    - **GPC vs GPT Consistency Check**: Compares GPO metadata in Active Directory (GPC) with files in SYSVOL (GPT) to detect version mismatches or orphaned objects. Supports scoped (loaded GPOs) and full domain scans.
+    - **Domain Controllers Inventory**: Automatically discovers all DCs in the domain and collects operational metadata (OS, .NET version, DNS roles, Network config, Patch level, and Services) into a CSV report.
+
+> [!IMPORTANT]
+> **Beta Features**: The features under the **eServices** menu are currently in development and require further testing in diverse production environments to be considered complete and fully stable.
 
 ## Requirements
 - PowerShell 5.1 or 7.x
