@@ -30,6 +30,10 @@ function Show-UI {
     $gridResults = $window.FindName("gridResults")
     $txtStatus = $window.FindName("txtStatus")
 
+    $menuCheckConsistencyLoaded = $window.FindName("menuCheckConsistencyLoaded")
+    $menuCheckConsistencyAll = $window.FindName("menuCheckConsistencyAll")
+    $menuExportDCInventory = $window.FindName("menuExportDCInventory")
+
     $script:loadedSettings = @()
     $script:analysisResults = @()
 
@@ -289,6 +293,147 @@ function Show-UI {
                 }
             }
         })
+
+    # --- ESERVICES ---
+    function Show-ConsistencyResults {
+        param(
+            [Parameter(Mandatory=$true)]
+            $Data,
+            [string]$Title = "Consistency Check Results"
+        )
+
+        $xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        Title="$Title" Height="400" Width="800" Background="#1e293b">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <DataGrid Name="grid" AutoGenerateColumns="True" IsReadOnly="True" Background="#0f172a" Foreground="#e2e8f0" RowBackground="#1e293b" AlternatingRowBackground="#334155"/>
+        <Button Name="btnClose" Grid.Row="1" Content="Close" Width="100" HorizontalAlignment="Right" Margin="0,10,0,0" Padding="5"/>
+    </Grid>
+</Window>
+"@
+        $win = [Windows.Markup.XamlReader]::Parse($xaml)
+        $grid = $win.FindName("grid")
+        $grid.ItemsSource = $Data
+
+        $btnClose = $win.FindName("btnClose")
+        $btnClose.Add_Click({ $win.Close() })
+
+        $win.ShowDialog() | Out-Null
+    }
+
+    $menuCheckConsistencyLoaded.Add_Click({
+        Log-Message "Action: Check GPC/GPT Consistency for Loaded GPOs"
+        if ($script:loadedSettings.Count -eq 0) {
+            [System.Windows.MessageBox]::Show("nessuna GPO caricata per la comparazione`nimpossibile eseguire il controllo scoped", "Warning")
+            return
+        }
+
+        $uniqueGuids = $script:loadedSettings | Select-Object -ExpandProperty GPOGuid -Unique
+        $txtStatus.Text = "Checking consistency for loaded GPOs..."
+
+        try {
+            $res = Get-GPCGPTConsistency -TargetGuids $uniqueGuids
+            Show-ConsistencyResults -Data $res -Title "Scoped Consistency Check"
+            $txtStatus.Text = "Scoped consistency check complete."
+        }
+        catch {
+            Log-Message "Error in Scoped Consistency Check: $_"
+            [System.Windows.MessageBox]::Show("Error: $_", "Error")
+        }
+    })
+
+    $menuCheckConsistencyAll.Add_Click({
+        Log-Message "Action: Check GPC/GPT Consistency for All Domain GPOs"
+        $txtStatus.Text = "Performing full domain consistency check..."
+
+        try {
+            $res = Get-GPCGPTConsistency
+
+            # Summary Calculation
+            $total = $res.Count
+            $ok = ($res | Where-Object { $_.Status -eq "OK" }).Count
+            $missingSysvol = ($res | Where-Object { $_.Status -eq "Missing_SYSVOL" }).Count
+            $orphanSysvol = ($res | Where-Object { $_.Status -eq "Orphan_SYSVOL" }).Count
+            $mismatch = ($res | Where-Object { $_.Status -eq "Version_Mismatch" }).Count
+
+            $summary = "Full Domain Consistency Check Summary:`n`n" +
+                       "Total GPOs analyzed: $total`n" +
+                       "OK: $ok`n" +
+                       "Missing in SYSVOL: $missingSysvol`n" +
+                       "Orphan in SYSVOL: $orphanSysvol`n" +
+                       "Version Mismatch: $mismatch"
+
+            [System.Windows.MessageBox]::Show($summary, "Consistency Check Summary")
+
+            # Save detailed report
+            $reportPath = Join-Path $PSScriptRoot "..\ConsistencyReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+            $res | Export-Csv -Path $reportPath -NoTypeInformation
+            Log-Message "Detailed report saved to: $reportPath"
+
+            Show-ConsistencyResults -Data $res -Title "Full Domain Consistency Check"
+            $txtStatus.Text = "Full domain consistency check complete. Report saved."
+        }
+        catch {
+            Log-Message "Error in Full Domain Consistency Check: $_"
+            [System.Windows.MessageBox]::Show("Error: $_", "Error")
+        }
+    })
+
+    $menuExportDCInventory.Add_Click({
+        Log-Message "Action: Export Domain Controllers Inventory triggered."
+        $txtStatus.Text = "Inventorying Domain Controllers..."
+        $window.Cursor = [System.Windows.Input.Cursors]::Wait
+
+        try {
+            $inventory = Get-DomainControllersInventory
+            if ($inventory.Count -eq 0) {
+                [System.Windows.MessageBox]::Show("No Domain Controllers found or error during discovery.", "Information")
+                return
+            }
+
+            # Summary Calculation
+            $total = $inventory.Count
+            $ok = ($inventory | Where-Object { $_.Status -eq "OK" }).Count
+            $partial = ($inventory | Where-Object { $_.Status -eq "Partial" }).Count
+            $unreachable = ($inventory | Where-Object { $_.Status -eq "Unreachable" }).Count
+            $others = $total - $ok - $partial - $unreachable
+
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $defaultPath = Join-Path $PSScriptRoot "..\DC_Inventory_$timestamp.csv"
+
+            $dlg = New-Object System.Windows.Forms.SaveFileDialog
+            $dlg.Title = "Save Domain Controllers Inventory"
+            $dlg.Filter = "CSV File|*.csv"
+            $dlg.FileName = $defaultPath
+
+            if ($dlg.ShowDialog() -eq 'OK') {
+                $inventory | Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding utf8
+
+                $summary = "Domain Controllers Inventory Complete.`n`n" +
+                           "Total DC found: $total`n" +
+                           "Successfully processed: $ok`n" +
+                           "Partial data: $partial`n" +
+                           "Unreachable: $unreachable`n" +
+                           "Other errors: $others`n`n" +
+                           "Report saved to: $($dlg.FileName)"
+
+                [System.Windows.MessageBox]::Show($summary, "Inventory Summary")
+                Log-Message "Inventory exported to $($dlg.FileName)"
+            }
+        }
+        catch {
+            Log-Message "ERROR during DC Inventory: $_"
+            [System.Windows.MessageBox]::Show("An error occurred: $_", "Error")
+        }
+        finally {
+            $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+            $txtStatus.Text = "Ready"
+        }
+    })
 
     # --- EXPORT ---
     $btnExport.Add_Click({

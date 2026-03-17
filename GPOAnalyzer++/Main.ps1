@@ -13,6 +13,7 @@ Import-Module "$scriptRoot\Core\RegistryPolParser.psm1" -Force
 Import-Module "$scriptRoot\Core\GPPXmlParser.psm1" -Force
 Import-Module "$scriptRoot\Core\DiffEngine.psm1" -Force
 Import-Module "$scriptRoot\Core\TattooingAnalyzer.psm1" -Force
+Import-Module "$scriptRoot\Core\ConsistencyEngine.psm1" -Force
 
 # Import Export Modules
 Import-Module "$scriptRoot\Export\ExportExcel.psm1" -Force
